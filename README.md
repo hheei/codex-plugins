@@ -8,7 +8,7 @@ It exposes one tool, `ssh_exec`, with a small RPC-style interface:
 {
   "host": "prod",
   "command": "uname -a",
-  "timeout": 60
+  "timeout": 10
 }
 ```
 
@@ -47,12 +47,12 @@ Input:
 
 - `host`: OpenSSH destination, for example `prod` or `user@example.com`
 - `command`: command passed to the remote shell by OpenSSH
-- `timeout`: optional timeout in seconds, default `60`, clamped to `1..3600`
+- `timeout`: optional timeout in seconds, default `10`, clamped to `1..3600`
 
 Output:
 
 - text content containing the combined stdout/stderr tail or `(no output)`
-- `structuredContent` with `host`, `exitCode`, `stdout`, `stderr`, `durationMs`, `truncated`, and output size metadata
+- `structuredContent` with `host`, `exitCode`, `durationMs`, `truncated`, and output size metadata
 
 Non-zero exits, timeouts, and SSH startup failures are returned as MCP tool errors with captured output when available.
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+
 import { SessionManager } from "./session-manager";
 import type { ProcessResult } from "./session-manager";
 import {
@@ -34,19 +35,31 @@ interface McpServerOptions {
   manager?: SessionManager;
 }
 
+interface SshExecStructuredContent {
+  host: string;
+  exitCode: number | null;
+  durationMs: number;
+  truncated: boolean;
+  totalBytes?: number;
+  outputBytes?: number;
+  totalLines?: number;
+  outputLines?: number;
+  notice?: string;
+}
+
 const PROTOCOL_VERSION = "2025-06-18";
 const SERVER_INFO = { name: "ssh-exec-mcp", version: "0.1.0" };
 
 const SSH_EXEC_TOOL = {
   name: "ssh_exec",
   description:
-    "Run a non-interactive command on a remote OpenSSH destination. Returns a combined 50 KiB output tail and structured exit metadata. Timeout defaults to 60 seconds.",
+    "Run non-interactive command on remote OpenSSH destination. Returns combined 50 KiB output tail structured exit metadata. Timeout defaults 10 seconds.",
   inputSchema: {
     type: "object",
     properties: {
       host: { type: "string" },
       command: { type: "string" },
-      timeout: { type: "number", default: 60 },
+      timeout: { type: "number", default: 10 },
     },
     required: ["host", "command"],
   },
@@ -65,7 +78,6 @@ export function createMcpServer(options: McpServerOptions = {}) {
       if (message.jsonrpc !== "2.0" || typeof message.method !== "string") {
         return errorResponse(id, -32600, "Invalid Request");
       }
-
       if (message.id === undefined && message.method.startsWith("notifications/")) {
         return undefined;
       }
@@ -127,12 +139,10 @@ async function handleToolCall(
       structuredContent: {
         host: args.host,
         exitCode: null,
-        output: message,
-        stdout: "",
-        stderr: message,
         durationMs: 0,
         truncated: false,
-      },
+        notice: message,
+      } satisfies SshExecStructuredContent,
     });
   }
 }
@@ -148,10 +158,26 @@ function toolResultFromSsh(result: SshExecResult, isError: boolean) {
   const text = notice ? `${displayOutput}\n\n${notice}` : outputText || "(no output)";
   const payload: Record<string, unknown> = {
     content: [{ type: "text", text }],
-    structuredContent: notice ? { ...result, notice } : result,
+    structuredContent: structuredContentFromSsh(result, notice),
   };
-  if (isError) payload.isError = true;
+  if (isError) {
+    payload.isError = true;
+  }
   return payload;
+}
+
+function structuredContentFromSsh(result: SshExecResult, notice?: string): SshExecStructuredContent {
+  return {
+    host: result.host,
+    exitCode: result.exitCode,
+    durationMs: result.durationMs,
+    truncated: result.truncated,
+    totalBytes: result.totalBytes,
+    outputBytes: result.outputBytes,
+    totalLines: result.totalLines,
+    outputLines: result.outputLines,
+    ...(notice ? { notice } : {}),
+  };
 }
 
 function requestedProtocolVersion(params: unknown): string {
@@ -168,11 +194,13 @@ function resultResponse(id: JsonRpcId, result: unknown): JsonRpcResponse {
 
 function errorResponse(id: JsonRpcId, code: number, message: string, data?: unknown): JsonRpcResponse {
   const error: JsonRpcResponse["error"] = { code, message };
-  if (data !== undefined) error.data = data;
+  if (data !== undefined) {
+    error.data = data;
+  }
   return { jsonrpc: "2.0", id, error };
 }
 
-export async function runStdio(server = createMcpServer()): Promise<void> {
+export async function runStdio(server: ReturnType<typeof createMcpServer>): Promise<void> {
   const decoder = new TextDecoder();
   let buffer = "";
 
@@ -225,13 +253,17 @@ export async function runCleanupSshProcess(
 }
 
 async function handleLine(server: ReturnType<typeof createMcpServer>, line: string): Promise<void> {
-  if (!line.trim()) return;
+  if (!line.trim()) {
+    return;
+  }
+
   let response: JsonRpcResponse | undefined;
   try {
     response = await server.handle(JSON.parse(line));
   } catch (error) {
     response = errorResponse(null, -32700, "Parse error", error instanceof Error ? error.message : String(error));
   }
+
   if (response) {
     process.stdout.write(`${JSON.stringify(response)}\n`);
   }
@@ -242,11 +274,11 @@ if (import.meta.main) {
   const runner = (args: string[], timeoutMs?: number) =>
     runCleanupSshProcess(server.manager.sshBin, args, timeoutMs, server.manager.sensitiveValues());
   let cleanupPromise: Promise<void> | undefined;
-
   const cleanup = async () => {
     cleanupPromise ??= server.manager.closeAll(runner);
     await cleanupPromise;
   };
+
   process.once("beforeExit", () => {
     void cleanup();
   });
@@ -258,7 +290,7 @@ if (import.meta.main) {
   });
 
   runStdio(server).catch((error) => {
-    console.error(error instanceof Error ? error.stack || error.message : String(error));
+    process.stderr.write(`${error instanceof Error ? error.stack ?? error.message : String(error)}\n`);
     process.exit(1);
   });
 }

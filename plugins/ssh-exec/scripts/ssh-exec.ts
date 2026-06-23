@@ -105,7 +105,7 @@ export function validateHost(host: string): string {
 }
 
 export function clampTimeoutSeconds(value: number | undefined): number {
-  const raw = value ?? 60;
+  const raw = value ?? 10;
   return Math.min(3600, Math.max(1, raw));
 }
 

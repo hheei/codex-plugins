@@ -205,8 +205,8 @@ test("executeSshExec does not split multibyte UTF-8 characters when truncating",
   expect(result.output).not.toContain("\uFFFD");
 });
 
-test("ssh_exec timeout defaults to OMP-aligned 60 seconds", () => {
-  expect(clampTimeoutSeconds(undefined)).toBe(60);
+test("ssh_exec timeout defaults to 10 seconds", () => {
+  expect(clampTimeoutSeconds(undefined)).toBe(10);
 });
 
 async function readFakeLog(): Promise<Array<{ kind: string; args: string[] }>> {
