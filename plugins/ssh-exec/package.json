@@ -1,0 +1,38 @@
+{
+  "name": "@hheei/ssh-exec",
+  "version": "0.2.0",
+  "description": "Codex SSH plugin with host discovery, remote exec, and sshfs mount helpers",
+  "license": "MIT",
+  "type": "module",
+  "private": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    ".codex-plugin",
+    ".mcp.json",
+    "assets",
+    "scripts"
+  ],
+  "keywords": [
+    "codex",
+    "plugin",
+    "mcp",
+    "ssh",
+    "sshfs"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hheei/ssh-exec.git"
+  },
+  "homepage": "https://github.com/hheei/ssh-exec",
+  "bugs": {
+    "url": "https://github.com/hheei/ssh-exec/issues"
+  },
+  "engines": {
+    "bun": ">=1.1.0"
+  },
+  "scripts": {
+    "test": "bun test scripts/*.test.ts"
+  }
+}

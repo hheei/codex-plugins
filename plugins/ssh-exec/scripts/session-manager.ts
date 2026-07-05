@@ -73,7 +73,10 @@ interface MountState {
 
 const DEFAULT_PLUGIN_DIR = join(homedir(), ".codex", "ssh-exec");
 const DEFAULT_CONTROL_DIR = DEFAULT_PLUGIN_DIR;
-const DEFAULT_MOUNT_DIR = DEFAULT_PLUGIN_DIR;
+const DEFAULT_MOUNT_DIR = join(homedir(), ".cache", "ssh-exec");
+const DEFAULT_CONNECT_TIMEOUT_SECONDS = 30;
+const DEFAULT_MASTER_SETUP_TIMEOUT_MS = 30_000;
+const CONTROL_CHECK_TIMEOUT_MS = 10_000;
 
 export class SessionManager {
 	readonly sshBin: string;
@@ -104,8 +107,11 @@ export class SessionManager {
 		this.platform = options.platform ?? process.platform;
 		this.controlPersist = options.controlPersist ?? "3600";
 		this.supportsControlMaster = options.supportsControlMaster ?? this.platform !== "win32";
-		this.connectTimeoutSeconds = clampPositiveInt(options.connectTimeoutSeconds, 5);
-		this.connectionAttempts = clampPositiveInt(options.connectionAttempts, 1);
+		this.connectTimeoutSeconds = clampPositiveInt(
+			options.connectTimeoutSeconds,
+			DEFAULT_CONNECT_TIMEOUT_SECONDS,
+		);
+		this.connectionAttempts = clampPositiveInt(options.connectionAttempts, 2);
 		this.serverAliveIntervalSeconds = clampPositiveInt(options.serverAliveIntervalSeconds, 5);
 		this.serverAliveCountMax = clampPositiveInt(options.serverAliveCountMax, 1);
 		this.failureBackoffMs = Math.max(0, options.failureBackoffMs ?? 15_000);
@@ -313,12 +319,17 @@ export class SessionManager {
 
 		await this.ensureControlDir();
 		await this.removeStaleSocket(session.socketPath);
+		const startedAt = Date.now();
 
 		try {
-			const check = await runner(this.buildControlArgs(session, "check"), 10_000);
+			const check = await runner(this.buildControlArgs(session, "check"), CONTROL_CHECK_TIMEOUT_MS);
 			if (check.exitCode !== 0) {
 				await this.removeSocketIfPresent(session.socketPath);
-				const start = await runner(this.buildStartArgs(session), 15_000);
+				const remainingSetupMs = Math.max(
+					1,
+					DEFAULT_MASTER_SETUP_TIMEOUT_MS - (Date.now() - startedAt),
+				);
+				const start = await runner(this.buildStartArgs(session), remainingSetupMs);
 				if (start.exitCode !== 0) {
 					const detail = start.stderr.trim() || start.stdout.trim();
 					const suffix = detail ? `: ${this.sanitize(detail)}` : "";
@@ -341,6 +352,9 @@ export class SessionManager {
 	private assertHostAvailable(host: string): void {
 		const failure = this.#failures.get(host);
 		if (!failure) return;
+		if (failure.blockedUntil === 0) {
+			return;
+		}
 		if (failure.blockedUntil <= Date.now()) {
 			this.#failures.delete(host);
 			return;
@@ -359,7 +373,7 @@ export class SessionManager {
 		const failures = (current?.failures ?? 0) + 1;
 		this.#failures.set(host, {
 			failures,
-			blockedUntil: Date.now() + this.failureBackoffMs,
+			blockedUntil: failures > 1 ? Date.now() + this.failureBackoffMs : 0,
 		});
 	}
 

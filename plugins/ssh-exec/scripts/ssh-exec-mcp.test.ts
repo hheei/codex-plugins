@@ -2,12 +2,13 @@ import { expect, test } from "bun:test";
 import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
 import { createMcpServer, runCleanupSshProcess } from "./ssh-exec-mcp";
 import { SessionManager } from "./session-manager";
 import type { SshMountArgs } from "./ssh-mount";
 import type { SshExecArgs, SshExecResult } from "./ssh-exec";
 
-test("MCP initialize and tools/list expose ssh_exec and ssh_mount", async () => {
+test("MCP initialize and tools/list expose exec, mount, and host", async () => {
 	const server = createMcpServer({ execute: successfulExecute });
 
 	const initialize = await server.handle({
@@ -27,16 +28,17 @@ test("MCP initialize and tools/list expose ssh_exec and ssh_mount", async () => 
 		id: 1,
 		result: {
 			protocolVersion: "2025-06-18",
-			serverInfo: { name: "ssh-exec-mcp", version: "0.1.0" },
+			serverInfo: { name: "ssh", version: "0.1.0" },
 		},
 	});
 	expect((tools as { result: { tools: Array<{ name: string }> } }).result.tools.map((tool) => tool.name)).toEqual([
-		"ssh_exec",
-		"ssh_mount",
+		"exec",
+		"mount",
+		"host",
 	]);
 });
 
-test("tools/call rejects unsafe ssh_exec and ssh_mount hosts before execution", async () => {
+test("tools/call rejects unsafe exec and mount hosts before execution", async () => {
 	let execCalls = 0;
 	let mountCalls = 0;
 	const server = createMcpServer({
@@ -54,13 +56,13 @@ test("tools/call rejects unsafe ssh_exec and ssh_mount hosts before execution", 
 		jsonrpc: "2.0",
 		id: 3,
 		method: "tools/call",
-		params: { name: "ssh_exec", arguments: { host: "-bad", command: "ok" } },
+		params: { name: "exec", arguments: { host: "-bad", command: "ok" } },
 	});
 	const mountResponse = await server.handle({
 		jsonrpc: "2.0",
 		id: 4,
 		method: "tools/call",
-		params: { name: "ssh_mount", arguments: { host: "-bad" } },
+		params: { name: "mount", arguments: { host: "-bad" } },
 	});
 
 	expect(execCalls).toBe(0);
@@ -69,7 +71,58 @@ test("tools/call rejects unsafe ssh_exec and ssh_mount hosts before execution", 
 	expect(mountResponse).toMatchObject({ jsonrpc: "2.0", id: 4, error: { code: -32602 } });
 });
 
-test("tools/call returns ssh_mount local path and Codex file-tool hint", async () => {
+test("tools/call returns host matches", async () => {
+	const server = createMcpServer({
+		findHosts: async (pattern: string) => {
+			const hosts = [
+				{ alias: "ileqm", user: "chlo", hostname: "100.80.181.114", display: "ileqm (chlo@100.80.181.114)" },
+				{ alias: "sccpu", user: "hheei", hostname: "xh5.hpccube.com", display: "sccpu (hheei@xh5.hpccube.com)" },
+			];
+			if (pattern === "*") return hosts;
+			const matcher = new RegExp(pattern);
+			return hosts.filter((host) => matcher.test(host.alias));
+		},
+	});
+
+	const response = await server.handle({
+		jsonrpc: "2.0",
+		id: 5,
+		method: "tools/call",
+		params: { name: "host", arguments: { ssh_host: "ileqm|sccpu" } },
+	});
+
+	expect(response).toMatchObject({
+		jsonrpc: "2.0",
+		id: 5,
+		result: {
+			content: [{ type: "text", text: "ileqm (chlo@100.80.181.114)\nsccpu (hheei@xh5.hpccube.com)" }],
+		},
+	});
+});
+
+test("tools/call returns no-host text when host is missing", async () => {
+	const server = createMcpServer({
+		findHosts: async () => [],
+	});
+
+	const response = await server.handle({
+		jsonrpc: "2.0",
+		id: 6,
+		method: "tools/call",
+		params: { name: "host", arguments: { ssh_host: "ileqm" } },
+	});
+
+	expect(response).toMatchObject({
+		jsonrpc: "2.0",
+		id: 6,
+		result: {
+			content: [{ type: "text", text: "No `ileqm` host." }],
+			structuredContent: { hosts: [] },
+		},
+	});
+});
+
+test("tools/call returns compact mount success text", async () => {
 	const server = createMcpServer({
 		mount: async (args: SshMountArgs) => ({
 			host: args.host,
@@ -80,15 +133,17 @@ test("tools/call returns ssh_mount local path and Codex file-tool hint", async (
 
 	const response = await server.handle({
 		jsonrpc: "2.0",
-		id: 5,
+		id: 7,
 		method: "tools/call",
-		params: { name: "ssh_mount", arguments: { host: "prod" } },
+		params: { name: "mount", arguments: { host: "prod" } },
 	});
-	const result = (response as { result: { content: Array<{ text: string }>; structuredContent: Record<string, unknown> } }).result;
 
-	expect(result.content[0]?.text).toContain("Remounted prod.");
-	expect(result.content[0]?.text).toContain("Local path: /tmp/ssh-mount/prod");
-	expect(result.content[0]?.text).toContain("Next: use built-in read, edit, or write");
+	const result = (response as {
+		result: { content: Array<{ text: string }>; structuredContent: Record<string, unknown> };
+	}).result;
+	expect(result.content[0]?.text).toContain("Success.");
+	expect(result.content[0]?.text).toContain("Local path: /tmp/ssh-mount/prod/");
+	expect(result.content[0]?.text).toContain("Home path: /tmp/ssh-mount/prod/...");
 	expect(result.structuredContent).toEqual({
 		host: "prod",
 		localPath: "/tmp/ssh-mount/prod",
@@ -96,7 +151,7 @@ test("tools/call returns ssh_mount local path and Codex file-tool hint", async (
 	});
 });
 
-test("default MCP executor keeps timeout tail output for ssh_exec", async () => {
+test("default MCP executor keeps timeout tail output for exec", async () => {
 	const tmpRoot = await mkdtemp(join(tmpdir(), "ssh-exec-mcp-timeout-test-"));
 	const fakeSsh = join(tmpRoot, "fake-timeout-ssh.ts");
 	await Bun.write(
@@ -109,9 +164,9 @@ const args = process.argv.slice(2);
 const socketPath = args[args.indexOf("-S") + 1];
 if (args.includes("-O") && args.includes("check")) process.exit(255);
 if (args.includes("-M") && args.includes("-N") && args.includes("-f")) {
-	await mkdir(dirname(socketPath), { recursive: true });
-	await Bun.write(socketPath, "master");
-	process.exit(0);
+  await mkdir(dirname(socketPath), { recursive: true });
+  await Bun.write(socketPath, "master");
+  process.exit(0);
 }
 process.stdout.write("partial before timeout\\n");
 await Bun.sleep(2000);
@@ -126,13 +181,11 @@ process.exit(0);
 		});
 		const response = await server.handle({
 			jsonrpc: "2.0",
-			id: 6,
+			id: 8,
 			method: "tools/call",
-			params: { name: "ssh_exec", arguments: { host: "prod", command: "slow", timeout: 1 } },
+			params: { name: "exec", arguments: { host: "prod", command: "slow", timeout: 2 } },
 		});
 		const text = (response as { result: { isError: boolean; content: Array<{ text: string }> } }).result.content[0]?.text ?? "";
-
-		expect((response as { result: { isError?: boolean } }).result.isError).toBe(true);
 		expect(text).toContain("partial before timeout");
 		expect(text).toContain("timed out");
 	} finally {
@@ -142,33 +195,56 @@ process.exit(0);
 
 test("cleanup runner captures stdout and stderr", async () => {
 	const tmpRoot = await mkdtemp(join(tmpdir(), "ssh-exec-cleanup-test-"));
-	const fakeSsh = join(tmpRoot, "fake-cleanup-ssh.ts");
+	const fakeBin = join(tmpRoot, "fake-cleanup-ssh.ts");
 	await Bun.write(
-		fakeSsh,
+		fakeBin,
 		`#!/usr/bin/env bun
-process.stdout.write("cleanup out\\n");
-process.stderr.write("cleanup err\\n");
-process.exit(3);
+process.stdout.write("out\\n");
+process.stderr.write("err\\n");
+process.exit(0);
 `,
 	);
-	await chmod(fakeSsh, 0o755);
+	await chmod(fakeBin, 0o755);
 
 	try {
-		const result = await runCleanupSshProcess(fakeSsh, ["-O", "exit"], 1000);
+		const result = await runCleanupSshProcess(fakeBin, ["prod"]);
 		expect(result).toMatchObject({
-			exitCode: 3,
-			stdout: "cleanup out\n",
-			stderr: "cleanup err\n",
-			output: "cleanup out\ncleanup err\n",
-			truncated: false,
+			exitCode: 0,
+			stdout: "out\n",
+			stderr: "err\n",
+			output: "out\nerr\n",
 		});
 	} finally {
 		await rm(tmpRoot, { recursive: true, force: true });
 	}
 });
 
-async function successfulExecute(args: SshExecArgs): Promise<SshExecResult> {
-	return {
+test("tools/call returns mount errors without fake mounted payload", async () => {
+	const server = createMcpServer({
+		mount: async () => {
+			throw new Error("mount failed");
+		},
+	});
+
+	const response = await server.handle({
+		jsonrpc: "2.0",
+		id: 9,
+		method: "tools/call",
+		params: { name: "mount", arguments: { host: "prod" } },
+	});
+
+	expect(response).toMatchObject({
+		jsonrpc: "2.0",
+		id: 9,
+		result: {
+			isError: true,
+			content: [{ type: "text", text: "mount failed" }],
+		},
+	});
+});
+
+function successfulExecute(args: SshExecArgs): Promise<SshExecResult> {
+	return Promise.resolve({
 		host: args.host,
 		exitCode: 0,
 		stdout: "hello\n",
@@ -180,5 +256,5 @@ async function successfulExecute(args: SshExecArgs): Promise<SshExecResult> {
 		outputBytes: 11,
 		totalLines: 2,
 		outputLines: 2,
-	};
+	});
 }

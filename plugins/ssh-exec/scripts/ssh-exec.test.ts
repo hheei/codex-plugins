@@ -163,6 +163,61 @@ test("clampTimeoutSeconds keeps timeouts in supported range", () => {
 	expect(clampTimeoutSeconds(99999)).toBe(3600);
 });
 
+test("SessionManager defaults give SSH master setup up to 30 seconds total", async () => {
+	const timeouts: number[] = [];
+	const manager = new SessionManager({
+		sshBin: fakeSshPath,
+		controlDir: join(tmpRoot, "control-master"),
+	});
+	const runner = async (args: string[], timeoutMs?: number) => {
+		timeouts.push(timeoutMs ?? -1);
+		if (args.includes("-O") && args.includes("check")) {
+			return {
+				exitCode: 255,
+				stdout: "",
+				stderr: "No ControlMaster",
+			};
+		}
+		return {
+			exitCode: 0,
+			stdout: "",
+			stderr: "",
+		};
+	};
+
+	await manager.ensureConnected("prod", runner);
+
+	expect(manager.connectTimeoutSeconds).toBe(30);
+	expect(timeouts).toHaveLength(2);
+	expect(timeouts[0]).toBe(10_000);
+	expect(timeouts[1]).toBeGreaterThan(20_000);
+	expect(timeouts[1]).toBeLessThanOrEqual(30_000);
+});
+
+test("SessionManager defaults mount root under ~/.cache/ssh-exec", () => {
+	const manager = new SessionManager({
+		sshBin: fakeSshPath,
+	});
+
+	expect(manager.getMountPath("prod")).toContain("/.cache/ssh-exec/");
+});
+
+test("ensureConnected blocks only after repeated master-start failures", async () => {
+	const failingSshPath = join(tmpRoot, "fake-ssh-fail.ts");
+	await Bun.write(failingSshPath, failingFakeSshSource(fakeLogPath));
+	await chmod(failingSshPath, 0o755);
+	const manager = new SessionManager({
+		sshBin: failingSshPath,
+		controlDir: join(tmpRoot, "control-master"),
+		failureBackoffMs: 1_000,
+	});
+	const runner = async (args: string[], timeoutMs?: number) => await runFakeProcess(failingSshPath, args, timeoutMs);
+
+	await expect(manager.ensureConnected("prod", runner)).rejects.toThrow(/simulated connect timeout/i);
+	await expect(manager.ensureConnected("prod", runner)).rejects.toThrow(/simulated connect timeout/i);
+	await expect(manager.ensureConnected("prod", runner)).rejects.toThrow(/temporarily blocked/i);
+});
+
 async function readFakeLog(): Promise<Array<{ kind: string; args: string[] }>> {
 	const raw = await readFile(fakeLogPath, "utf8").catch(() => "");
 	return raw
@@ -196,6 +251,43 @@ async function runFakeProcess(bin: string, args: string[], timeoutMs = 10_000) {
 	} finally {
 		clearTimeout(timeout);
 	}
+}
+
+function failingFakeSshSource(logPath: string): string {
+	return `#!/usr/bin/env bun
+import { appendFile, mkdir } from "node:fs/promises";
+import { dirname } from "node:path";
+
+const args = process.argv.slice(2);
+const logFile = ${JSON.stringify(logPath)};
+
+async function log(kind) {
+	await mkdir(dirname(logFile), { recursive: true });
+	await appendFile(logFile, JSON.stringify({ kind, args }) + "\\n");
+}
+
+const socketIndex = args.indexOf("-S");
+const socketPath = socketIndex >= 0 ? args[socketIndex + 1] : undefined;
+
+if (args.includes("-O") && args.includes("check")) {
+	await log("check");
+	console.error("No ControlMaster");
+	process.exit(255);
+}
+
+if (args.includes("-M") && args.includes("-N") && args.includes("-f")) {
+	await log("start");
+	if (socketPath) {
+		await mkdir(dirname(socketPath), { recursive: true });
+	}
+	console.error("simulated connect timeout");
+	process.exit(255);
+}
+
+await log("run");
+process.stdout.write("ok\\n");
+process.exit(0);
+`;
 }
 
 function fakeSshSource(logPath: string): string {
