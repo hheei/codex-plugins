@@ -6,6 +6,36 @@
 - `mount`: mount a remote host locally through `sshfs`
 - `exec`: run non-interactive remote commands over SSH
 
+## Install
+
+For external MCP clients that can launch an npm package:
+
+```json
+{
+  "mcpServers": {
+    "ssh": {
+      "command": "npx",
+      "args": ["-y", "@hheei/ssh-exec-mcp"]
+    }
+  }
+}
+```
+
+If you prefer Bun:
+
+```json
+{
+  "mcpServers": {
+    "ssh": {
+      "command": "bunx",
+      "args": ["@hheei/ssh-exec-mcp"]
+    }
+  }
+}
+```
+
+An example config is included at [examples/pi-agent.mcp.json](./examples/pi-agent.mcp.json).
+
 ## Recommended workflow
 
 When you are not sure whether a remote host exists, call `host` first.

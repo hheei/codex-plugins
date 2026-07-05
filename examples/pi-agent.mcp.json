@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "ssh": {
+      "command": "bun",
+      "args": [
+        "/absolute/path/to/ssh-exec-mcp.ts"
+      ]
+    }
+  }
+}

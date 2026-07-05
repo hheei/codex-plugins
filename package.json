@@ -1,0 +1,41 @@
+{
+  "name": "@hheei/ssh-exec-mcp",
+  "version": "0.2.0",
+  "description": "MCP server for SSH host discovery, remote exec, and sshfs mounting over OpenSSH",
+  "type": "module",
+  "license": "MIT",
+  "homepage": "https://github.com/hheei/ssh-exec",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hheei/ssh-exec.git"
+  },
+  "bugs": {
+    "url": "https://github.com/hheei/ssh-exec/issues"
+  },
+  "author": "hheei",
+  "bin": {
+    "ssh-exec-mcp": "bin/ssh-exec-mcp.js"
+  },
+  "files": [
+    "bin/",
+    "examples/",
+    "plugins/ssh-exec/",
+    "ssh-exec-mcp.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "mcp",
+    "ssh",
+    "sshfs",
+    "openssh",
+    "remote",
+    "codex"
+  ],
+  "scripts": {
+    "test": "bun test plugins/ssh-exec/scripts/*.test.ts"
+  }
+}
