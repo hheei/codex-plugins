@@ -27,7 +27,7 @@ test("MCP initialize and tools/list expose exec, mount, and host", async () => {
 		id: 1,
 		result: {
 			protocolVersion: "2025-06-18",
-			serverInfo: { name: "ssh", version: "0.3.0" },
+			serverInfo: { name: "ssh", version: "0.3.1" },
 		},
 	});
 	expect((tools as { result: { tools: Array<{ name: string }> } }).result.tools.map((tool) => tool.name)).toEqual([

@@ -79,6 +79,8 @@ const DEFAULT_CONTROL_DIR = DEFAULT_PLUGIN_DIR;
 const DEFAULT_MOUNT_DIR = join(homedir(), ".cache", "ssh-exec");
 const DEFAULT_CONNECT_TIMEOUT_SECONDS = 30;
 const DEFAULT_MASTER_SETUP_TIMEOUT_MS = 30_000;
+const DEFAULT_SERVER_ALIVE_INTERVAL_SECONDS = 300;
+const DEFAULT_SERVER_ALIVE_COUNT_MAX = 3;
 const CONTROL_CHECK_TIMEOUT_MS = 10_000;
 
 export class SessionManager {
@@ -115,8 +117,14 @@ export class SessionManager {
 			DEFAULT_CONNECT_TIMEOUT_SECONDS,
 		);
 		this.connectionAttempts = clampPositiveInt(options.connectionAttempts, 2);
-		this.serverAliveIntervalSeconds = clampPositiveInt(options.serverAliveIntervalSeconds, 5);
-		this.serverAliveCountMax = clampPositiveInt(options.serverAliveCountMax, 1);
+		this.serverAliveIntervalSeconds = clampPositiveInt(
+			options.serverAliveIntervalSeconds,
+			DEFAULT_SERVER_ALIVE_INTERVAL_SECONDS,
+		);
+		this.serverAliveCountMax = clampPositiveInt(
+			options.serverAliveCountMax,
+			DEFAULT_SERVER_ALIVE_COUNT_MAX,
+		);
 		this.failureBackoffMs = Math.max(0, options.failureBackoffMs ?? 15_000);
 		this.#mountProbe = options.mountProbe ?? (async (mountPath) => await this.probeMount(mountPath));
 		this.#unmountMount = options.unmountMount ?? (async (mountPath) => await this.unmountPath(mountPath));

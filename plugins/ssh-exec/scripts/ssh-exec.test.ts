@@ -177,6 +177,8 @@ test("SessionManager defaults give SSH master setup up to 30 seconds total", asy
 	await manager.ensureConnected("prod", runner);
 
 	expect(manager.connectTimeoutSeconds).toBe(30);
+	expect(manager.serverAliveIntervalSeconds).toBe(300);
+	expect(manager.serverAliveCountMax).toBe(3);
 	expect(timeouts).toHaveLength(2);
 	expect(timeouts[0]).toBe(10_000);
 	expect(timeouts[1]).toBeGreaterThan(20_000);

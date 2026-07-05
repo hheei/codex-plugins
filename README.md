@@ -135,3 +135,4 @@ Example flow:
 - `host` reads local OpenSSH config; it does not verify reachability
 - `mount` mounts the remote root `/`
 - `exec` returns bounded output and exit metadata
+- SSH keepalive defaults are `ServerAliveInterval=300` and `ServerAliveCountMax=3`

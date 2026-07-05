@@ -70,7 +70,7 @@ interface SshHostStructuredContent {
 }
 
 const PROTOCOL_VERSION = "2025-06-18";
-const SERVER_INFO = { name: "ssh", version: "0.3.0" };
+const SERVER_INFO = { name: "ssh", version: "0.3.1" };
 
 const SSH_EXEC_TOOL = {
 	name: "exec",
