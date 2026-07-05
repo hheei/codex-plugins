@@ -1,85 +1,74 @@
 # SSH Exec
 
-`SSH Exec` lets Codex work with remote machines over OpenSSH through three MCP tools:
+`SSH Exec` ships as a single package, `@hheei/ssh-exec`, and supports three usage modes:
 
-- `host`: find configured SSH hosts before you try to connect
+- Codex plugin / bundled MCP
+- external MCP server via `npx` or `bunx`
+- pi-extension via `index.ts`
+
+It exposes three SSH-oriented tools:
+
+- `host`: find configured SSH aliases before you try to connect
 - `mount`: mount a remote host locally through `sshfs`
 - `exec`: run non-interactive remote commands over SSH
 
-## Install
+## External MCP install
 
-For external MCP clients that can launch an npm package:
+Use `npx`:
 
 ```json
 {
   "mcpServers": {
     "ssh": {
       "command": "npx",
-      "args": ["-y", "@hheei/ssh-exec-mcp"]
+      "args": ["-y", "@hheei/ssh-exec"]
     }
   }
 }
 ```
 
-If you prefer Bun:
+Or `bunx`:
 
 ```json
 {
   "mcpServers": {
     "ssh": {
       "command": "bunx",
-      "args": ["@hheei/ssh-exec-mcp"]
+      "args": ["@hheei/ssh-exec"]
     }
   }
 }
 ```
 
-An example config is included at [examples/pi-agent.mcp.json](./examples/pi-agent.mcp.json).
+## pi-extension install
+
+Install the package and let pi load the extension from `index.ts`.
+
+The extension registers:
+
+- `host(ssh_host: string)`
+- `mount(host: string)`
+- `exec(host: string, command: string, timeout?: number)`
+
+When the remote alias is uncertain, use `host` first.
 
 ## Recommended workflow
 
-When you are not sure whether a remote host exists, call `host` first.
-
-For remote file changes:
-
-1. Call `host` with `ssh_host: "*"` or a regex like `ileqm|sccpu` to find the right alias.
-2. Call `mount` with the selected host.
-3. Use the returned local path with Codex built-in file tools.
-4. Call `exec` to inspect state, verify the result, or reload a remote service.
+1. Call `host` with `ssh_host: "*"` or a regex like `ileqm|sccpu`.
+2. Pick the alias you want from results like `alias (user@hostname)`.
+3. Call `mount` before editing remote files.
+4. Call `exec` to inspect state, verify changes, or reload services.
 
 Example flow:
 
 - `host(ssh_host: "prod|staging")`
 - `mount(host: "prod")`
-- Read or edit files under the returned local mount path
+- edit files under the returned local path
 - `exec(host: "prod", command: "systemctl reload nginx")`
 
-## Tools
+## Behavior notes
 
-### `host`
-
-- Finds SSH aliases from the local OpenSSH config
-- Supports `*` to list all concrete hosts
-- Supports regex-like matching such as `ileqm|sccpu`
-- Returns entries as `alias (user@hostname)`
-
-### `mount`
-
-- Mounts the remote host locally through `sshfs`
-- Reuses an existing healthy mount when possible
-- Repairs stale mounts by remounting
-- Returns a local path for Codex built-in file tools
-- Supported on Linux and macOS
-
-### `exec`
-
-- Runs non-interactive remote commands over SSH
-- Best for validation, inspection, and service operations
-- Returns bounded output and exit metadata
-
-## Notes
-
+- `host` reads local OpenSSH config and does not probe reachability
 - `mount` always mounts the remote root `/`
-- Host resolution comes from the local OpenSSH config
-- `host` checks configured aliases only; it does not probe network reachability
-- This plugin does not implement a separate remote file protocol; file edits are meant to go through Codex built-in file tools after `mount`
+- `exec` returns bounded output and exit metadata
+- if you are not sure whether a host exists, use `host` first

@@ -1,19 +1,23 @@
 #!/usr/bin/env bun
 
-import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { isAbsolute, join } from "node:path";
 
 import { SessionManager } from "./session-manager";
 import type { ProcessResult, SshMountResult } from "./session-manager";
+import {
+	findConfiguredHosts,
+	type SshHostRecord,
+	validateSshHostPattern,
+} from "./ssh-hosts";
 import { executeSshMount, validateSshMountArgs, type SshMountArgs } from "./ssh-mount";
 import {
 	executeSshExec,
-	readProcessOutputTail,
+	type ExecuteSshExecOptions,
 	validateSshExecArgs,
 	type SshExecArgs,
 	type SshExecResult,
 } from "./ssh-exec";
+import { readProcessOutputTail } from "./stream-output";
 
 type JsonRpcId = string | number | null;
 
@@ -65,20 +69,13 @@ interface SshHostStructuredContent {
 	hosts: SshHostRecord[];
 }
 
-interface SshHostRecord {
-	alias: string;
-	user?: string;
-	hostname: string;
-	display: string;
-}
-
 const PROTOCOL_VERSION = "2025-06-18";
-const SERVER_INFO = { name: "ssh", version: "0.1.0" };
+const SERVER_INFO = { name: "ssh", version: "0.3.0" };
 
 const SSH_EXEC_TOOL = {
 	name: "exec",
 	description:
-		"Run a non-interactive command on a remote OpenSSH host. Use this after mount when you want to inspect state, verify a change, or restart or reload a service. Returns bounded output and exit metadata. Timeout defaults to 10 seconds.",
+		"Run a non-interactive command on a remote OpenSSH host. If you are unsure whether the alias exists, use host first. Returns bounded output and exit metadata. Timeout defaults to 10 seconds.",
 	inputSchema: {
 		type: "object",
 		properties: {
@@ -93,7 +90,7 @@ const SSH_EXEC_TOOL = {
 const SSH_MOUNT_TOOL = {
 	name: "mount",
 	description:
-		"Mount a remote OpenSSH host locally through sshfs so built-in read, edit, and write tools can work on the returned local path. Reuses a healthy mount and remounts a stale one when needed. Supported on Linux and macOS.",
+		"Mount a remote OpenSSH host locally through sshfs so built-in read, edit, and write tools can work on the returned local path. If the alias is uncertain, use host first.",
 	inputSchema: {
 		type: "object",
 		properties: {
@@ -119,7 +116,9 @@ const SSH_HOST_TOOL = {
 export function createMcpServer(options: McpServerOptions = {}) {
 	const manager = options.manager ?? new SessionManager();
 	const execute =
-		options.execute ?? (async (args: SshExecArgs) => await executeSshExec(manager, args, { timeoutMode: "result" }));
+		options.execute ??
+		(async (args: SshExecArgs) =>
+			await executeSshExec(manager, args, { timeoutMode: "result" } satisfies ExecuteSshExecOptions));
 	const mount = options.mount ?? (async (args: SshMountArgs) => {
 		const runner = async (runnerArgs: string[], timeoutMs?: number) =>
 			await runCleanupSshProcess(manager.sshBin, runnerArgs, timeoutMs, manager.sensitiveValues(args.host));
@@ -169,7 +168,6 @@ async function handleToolCall(
 	}
 
 	const record = params as Record<string, unknown>;
-
 	if (record.name === "host") {
 		try {
 			const pattern = validateSshHostPattern(record.arguments);
@@ -300,120 +298,6 @@ function ensureTrailingSlash(path: string): string {
 	return path.endsWith("/") ? path : `${path}/`;
 }
 
-function validateSshHostPattern(value: unknown): string {
-	if (!value || typeof value !== "object" || Array.isArray(value)) {
-		throw new Error("host arguments must be an object");
-	}
-	const pattern = (value as Record<string, unknown>).ssh_host;
-	if (typeof pattern !== "string" || !pattern.trim()) {
-		throw new Error("host.ssh_host must be a non-empty string");
-	}
-	return pattern.trim();
-}
-
-async function findConfiguredHosts(pattern: string, configPath = join(homedir(), ".ssh", "config")): Promise<SshHostRecord[]> {
-	const hosts: SshHostRecord[] = [];
-	await collectHostsFromConfig(configPath, new Set<string>(), hosts, new Set<string>());
-	if (pattern === "*") return hosts;
-	const matcher = new RegExp(pattern);
-	return hosts.filter((host) => matcher.test(host.alias));
-}
-
-async function collectHostsFromConfig(
-	configPath: string,
-	seenFiles: Set<string>,
-	hosts: SshHostRecord[],
-	seenHosts: Set<string>,
-): Promise<void> {
-	if (seenFiles.has(configPath)) return;
-	seenFiles.add(configPath);
-
-	const raw = await readFile(configPath, "utf8").catch(() => "");
-	if (!raw) return;
-
-	const baseDir = configPath.includes("/") ? configPath.slice(0, configPath.lastIndexOf("/")) : ".";
-	let currentAliases: string[] = [];
-	let currentUser: string | undefined;
-	let currentHostName: string | undefined;
-
-	const flushCurrent = () => {
-		for (const alias of currentAliases) {
-			if (seenHosts.has(alias)) continue;
-			seenHosts.add(alias);
-			const hostname = currentHostName ?? alias;
-			const user = currentUser;
-			hosts.push({
-				alias,
-				user,
-				hostname,
-				display: `${alias} (${user ? `${user}@` : ""}${hostname})`,
-			});
-		}
-	};
-
-	for (const rawLine of raw.split(/\r?\n/)) {
-		const line = rawLine.trim();
-		if (!line || line.startsWith("#")) continue;
-
-		const includeMatch = line.match(/^Include\s+(.+)$/i);
-		if (includeMatch) {
-			flushCurrent();
-			currentAliases = [];
-			currentUser = undefined;
-			currentHostName = undefined;
-			for (const token of splitConfigArgs(includeMatch[1])) {
-				if (token.includes("*") || token.includes("?")) continue;
-				const includePath = token.startsWith("~")
-					? join(homedir(), token.slice(1))
-					: isAbsolute(token)
-						? token
-						: join(baseDir, token);
-				await collectHostsFromConfig(includePath, seenFiles, hosts, seenHosts);
-			}
-			continue;
-		}
-
-		const hostMatch = line.match(/^Host\s+(.+)$/i);
-		if (hostMatch) {
-			flushCurrent();
-			currentAliases = [];
-			currentUser = undefined;
-			currentHostName = undefined;
-			for (const token of splitConfigArgs(hostMatch[1])) {
-				if (!isConcreteHostToken(token)) continue;
-				currentAliases.push(token);
-			}
-			continue;
-		}
-
-		if (currentAliases.length === 0) continue;
-
-		const userMatch = line.match(/^User\s+(.+)$/i);
-		if (userMatch) {
-			currentUser = splitConfigArgs(userMatch[1])[0];
-			continue;
-		}
-
-		const hostNameMatch = line.match(/^HostName\s+(.+)$/i);
-		if (hostNameMatch) {
-			currentHostName = splitConfigArgs(hostNameMatch[1])[0];
-		}
-	}
-
-	flushCurrent();
-}
-
-function splitConfigArgs(value: string): string[] {
-	return value
-		.split(/\s+/)
-		.map((token) => token.trim())
-		.filter(Boolean);
-}
-
-function isConcreteHostToken(token: string): boolean {
-	return !(token.startsWith("!") || /[*?]/.test(token));
-}
-
 function requestedProtocolVersion(params: unknown): string {
 	if (!params || typeof params !== "object" || Array.isArray(params)) return PROTOCOL_VERSION;
 	const version = (params as Record<string, unknown>).protocolVersion;
@@ -436,14 +320,13 @@ export async function runCleanupSshProcess(
 	timeoutMs = 10_000,
 	sensitiveValues: string[] = [],
 ): Promise<ProcessResult> {
-	const child = Bun.spawn([sshBin, ...args], {
-		stdin: "ignore",
-		stdout: "pipe",
-		stderr: "pipe",
+	const { spawn } = await import("node:child_process");
+	const child = spawn(sshBin, args, {
+		stdio: ["ignore", "pipe", "pipe"],
 	});
 
 	let timedOut = false;
-	let killTimer: Timer | undefined;
+	let killTimer: ReturnType<typeof setTimeout> | undefined;
 	const timeout = setTimeout(() => {
 		timedOut = true;
 		child.kill("SIGTERM");
@@ -453,7 +336,10 @@ export async function runCleanupSshProcess(
 	try {
 		const [output, exitCode] = await Promise.all([
 			readProcessOutputTail(child.stdout, child.stderr, sensitiveValues),
-			child.exited,
+			new Promise<number | null>((resolve, reject) => {
+				child.once("error", reject);
+				child.once("close", (code) => resolve(code));
+			}),
 		]);
 		return {
 			exitCode: timedOut ? null : exitCode,
@@ -474,11 +360,11 @@ export async function runCleanupSshProcess(
 }
 
 export async function runStdio(server: ReturnType<typeof createMcpServer>): Promise<void> {
-	const decoder = new TextDecoder();
+	process.stdin.setEncoding("utf8");
 	let buffer = "";
 
-	for await (const chunk of Bun.stdin.stream()) {
-		buffer += decoder.decode(chunk, { stream: true });
+	for await (const chunk of process.stdin) {
+		buffer += chunk;
 		let newlineIndex = buffer.indexOf("\n");
 		while (newlineIndex >= 0) {
 			const line = buffer.slice(0, newlineIndex);
@@ -488,7 +374,6 @@ export async function runStdio(server: ReturnType<typeof createMcpServer>): Prom
 		}
 	}
 
-	buffer += decoder.decode();
 	if (buffer.trim()) await handleLine(server, buffer);
 }
 

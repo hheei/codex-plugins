@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { chmod, mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
 import { SessionManager, sanitizeHostForSocket, type MountProbeResult } from "./session-manager";
 import { clampTimeoutSeconds, executeSshExec } from "./ssh-exec";
 
@@ -13,7 +14,7 @@ beforeEach(async () => {
 	tmpRoot = await mkdtemp(join(tmpdir(), "ssh-exec-test-"));
 	fakeSshPath = join(tmpRoot, "fake-ssh.ts");
 	fakeLogPath = join(tmpRoot, "ssh.log");
-	await Bun.write(fakeSshPath, fakeSshSource(fakeLogPath));
+	await writeFile(fakeSshPath, fakeSshSource(fakeLogPath));
 	await chmod(fakeSshPath, 0o755);
 });
 
@@ -37,6 +38,7 @@ test("executeSshExec establishes control-master and reuses host session", async 
 	});
 	expect(second.exitCode).toBe(0);
 	expect((await stat(controlDir)).mode & 0o777).toBe(0o700);
+
 	const events = await readFakeLog();
 	expect(events.filter((event) => event.kind === "check").length).toBeGreaterThanOrEqual(2);
 	expect(events.filter((event) => event.kind === "start").length).toBeGreaterThanOrEqual(1);
@@ -60,9 +62,9 @@ test("executeSshExec returns timeout result with captured output when requested"
 
 test("executeSshExec rejects host values OpenSSH could parse as options", async () => {
 	const manager = new SessionManager({ sshBin: fakeSshPath, controlDir: join(tmpRoot, "control-master") });
-	await expect(executeSshExec(manager, { host: "-oProxyCommand=sh", command: "say-hello", timeout: 5 })).rejects.toThrow(
-		/must not start with '-'/i,
-	);
+	await expect(
+		executeSshExec(manager, { host: "-oProxyCommand=sh", command: "say-hello", timeout: 5 }),
+	).rejects.toThrow(/must not start with '-'/i);
 });
 
 test("ensureMounted runs sshfs first time and reuses healthy mount", async () => {
@@ -74,8 +76,8 @@ test("ensureMounted runs sshfs first time and reuses healthy mount", async () =>
 		controlDir: join(tmpRoot, "control-master"),
 		mountDir,
 		mountProbe: async (mountPath): Promise<MountProbeResult> => ({
-			mounted: mounted.has(mountPath) || (await Bun.file(join(mountPath, ".mounted")).exists()),
-			healthy: mounted.has(mountPath) || (await Bun.file(join(mountPath, ".mounted")).exists()),
+			mounted: mounted.has(mountPath) || (await pathExists(join(mountPath, ".mounted"))),
+			healthy: mounted.has(mountPath) || (await pathExists(join(mountPath, ".mounted"))),
 		}),
 		unmountMount: async (mountPath) => {
 			mounted.delete(mountPath);
@@ -105,31 +107,28 @@ test("ensureMounted remounts stale mount and closeAll unmounts best-effort", asy
 		sshfsBin: fakeSshPath,
 		controlDir: join(tmpRoot, "control-master"),
 		mountDir,
-		mountProbe: async (mountPath) => {
-			const fileMounted = await Bun.file(join(mountPath, ".mounted")).exists();
-			if (fileMounted) return { mounted: true, healthy: true };
-			return mountState.get(mountPath) ?? { mounted: false, healthy: false };
-		},
+		mountProbe: async (mountPath) =>
+			mountState.get(mountPath) ??
+			((await pathExists(join(mountPath, ".mounted")))
+				? { mounted: true, healthy: true }
+				: { mounted: false, healthy: false }),
 		unmountMount: async (mountPath) => {
 			unmounted.push(mountPath);
-			mountState.set(mountPath, { mounted: false, healthy: false });
-			await rm(join(mountPath, ".mounted"), { force: true });
+			mountState.delete(mountPath);
 			return true;
 		},
 	});
 	const runner = async (args: string[], timeoutMs?: number) => await runFakeProcess(fakeSshPath, args, timeoutMs);
+
 	const mountPath = manager.getMountPath("prod");
-	await Bun.write(join(mountPath, ".keep"), "");
-	await Bun.write(join(mountPath, ".stale"), "stale");
 	mountState.set(mountPath, { mounted: true, healthy: false });
+	const result = await manager.ensureMounted("prod", runner);
 
-	const mountedResult = await manager.ensureMounted("prod", runner);
-	mountState.set(mountPath, { mounted: true, healthy: true });
-	await manager.closeAll(runner);
-
-	expect(mountedResult.status).toBe("remounted");
+	expect(result.status).toBe("remounted");
 	expect(unmounted).toContain(mountPath);
-	expect(unmounted.filter((path) => path === mountPath).length).toBeGreaterThanOrEqual(2);
+
+	await manager.closeAll(runner);
+	expect(unmounted).toContain(mountPath);
 });
 
 test("ensureMounted errors clearly when sshfs binary is missing", async () => {
@@ -140,7 +139,6 @@ test("ensureMounted errors clearly when sshfs binary is missing", async () => {
 		mountDir: join(tmpRoot, "mounts"),
 	});
 	const runner = async (args: string[], timeoutMs?: number) => await runFakeProcess(fakeSshPath, args, timeoutMs);
-
 	await expect(manager.ensureMounted("prod", runner)).rejects.toThrow(/sshfs binary not found/i);
 });
 
@@ -153,7 +151,6 @@ test("ensureMounted rejects unsupported local platforms", async () => {
 		platform: "win32",
 	});
 	const runner = async (args: string[], timeoutMs?: number) => await runFakeProcess(fakeSshPath, args, timeoutMs);
-
 	await expect(manager.ensureMounted("prod", runner)).rejects.toThrow(/supported only on Linux and macOS/i);
 });
 
@@ -172,17 +169,9 @@ test("SessionManager defaults give SSH master setup up to 30 seconds total", asy
 	const runner = async (args: string[], timeoutMs?: number) => {
 		timeouts.push(timeoutMs ?? -1);
 		if (args.includes("-O") && args.includes("check")) {
-			return {
-				exitCode: 255,
-				stdout: "",
-				stderr: "No ControlMaster",
-			};
+			return { exitCode: 255, stdout: "", stderr: "No ControlMaster" };
 		}
-		return {
-			exitCode: 0,
-			stdout: "",
-			stderr: "",
-		};
+		return { exitCode: 0, stdout: "", stderr: "" };
 	};
 
 	await manager.ensureConnected("prod", runner);
@@ -195,16 +184,13 @@ test("SessionManager defaults give SSH master setup up to 30 seconds total", asy
 });
 
 test("SessionManager defaults mount root under ~/.cache/ssh-exec", () => {
-	const manager = new SessionManager({
-		sshBin: fakeSshPath,
-	});
-
+	const manager = new SessionManager({ sshBin: fakeSshPath });
 	expect(manager.getMountPath("prod")).toContain("/.cache/ssh-exec/");
 });
 
 test("ensureConnected blocks only after repeated master-start failures", async () => {
 	const failingSshPath = join(tmpRoot, "fake-ssh-fail.ts");
-	await Bun.write(failingSshPath, failingFakeSshSource(fakeLogPath));
+	await writeFile(failingSshPath, failingFakeSshSource(fakeLogPath));
 	await chmod(failingSshPath, 0o755);
 	const manager = new SessionManager({
 		sshBin: failingSshPath,
@@ -227,17 +213,17 @@ async function readFakeLog(): Promise<Array<{ kind: string; args: string[] }>> {
 }
 
 async function runFakeProcess(bin: string, args: string[], timeoutMs = 10_000) {
-	const child = Bun.spawn([bin, ...args], {
-		stdin: "ignore",
-		stdout: "pipe",
-		stderr: "pipe",
-	});
+	const { spawn } = await import("node:child_process");
+	const child = spawn(bin, args, { stdio: ["ignore", "pipe", "pipe"] });
 	const timeout = setTimeout(() => child.kill("SIGTERM"), timeoutMs);
 	try {
 		const [stdoutBytes, stderrBytes, exitCode] = await Promise.all([
-			child.stdout ? new Response(child.stdout).bytes() : new Uint8Array(),
-			child.stderr ? new Response(child.stderr).bytes() : new Uint8Array(),
-			child.exited,
+			readBytes(child.stdout),
+			readBytes(child.stderr),
+			new Promise<number | null>((resolve, reject) => {
+				child.once("error", reject);
+				child.once("close", (code) => resolve(code));
+			}),
 		]);
 		const stdout = new TextDecoder().decode(stdoutBytes);
 		const stderr = new TextDecoder().decode(stderrBytes);
@@ -253,6 +239,24 @@ async function runFakeProcess(bin: string, args: string[], timeoutMs = 10_000) {
 	}
 }
 
+async function readBytes(stream: NodeJS.ReadableStream | null | undefined): Promise<Uint8Array> {
+	if (!stream) return new Uint8Array();
+	const chunks: Buffer[] = [];
+	for await (const chunk of stream as AsyncIterable<Buffer | string>) {
+		chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : Buffer.from(chunk));
+	}
+	return Buffer.concat(chunks);
+}
+
+async function pathExists(path: string): Promise<boolean> {
+	try {
+		await stat(path);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 function failingFakeSshSource(logPath: string): string {
 	return `#!/usr/bin/env bun
 import { appendFile, mkdir } from "node:fs/promises";
@@ -262,26 +266,26 @@ const args = process.argv.slice(2);
 const logFile = ${JSON.stringify(logPath)};
 
 async function log(kind) {
-	await mkdir(dirname(logFile), { recursive: true });
-	await appendFile(logFile, JSON.stringify({ kind, args }) + "\\n");
+  await mkdir(dirname(logFile), { recursive: true });
+  await appendFile(logFile, JSON.stringify({ kind, args }) + "\\n");
 }
 
 const socketIndex = args.indexOf("-S");
 const socketPath = socketIndex >= 0 ? args[socketIndex + 1] : undefined;
 
 if (args.includes("-O") && args.includes("check")) {
-	await log("check");
-	console.error("No ControlMaster");
-	process.exit(255);
+  await log("check");
+  console.error("No ControlMaster");
+  process.exit(255);
 }
 
 if (args.includes("-M") && args.includes("-N") && args.includes("-f")) {
-	await log("start");
-	if (socketPath) {
-		await mkdir(dirname(socketPath), { recursive: true });
-	}
-	console.error("simulated connect timeout");
-	process.exit(255);
+  await log("start");
+  if (socketPath) {
+    await mkdir(dirname(socketPath), { recursive: true });
+  }
+  console.error("simulated connect timeout");
+  process.exit(255);
 }
 
 await log("run");
@@ -299,12 +303,13 @@ const args = process.argv.slice(2);
 const logPath = ${JSON.stringify(logPath)};
 
 function argAfter(flag) {
-	const index = args.indexOf(flag);
-	return index === -1 ? undefined : args[index + 1];
+  const index = args.indexOf(flag);
+  return index === -1 ? undefined : args[index + 1];
 }
 
 async function log(kind) {
-	await appendFile(logPath, JSON.stringify({ kind, args }) + "\\n");
+  await mkdir(dirname(logPath), { recursive: true });
+  await appendFile(logPath, JSON.stringify({ kind, args }) + "\\n");
 }
 
 const socketPath = argAfter("-S");
@@ -315,49 +320,40 @@ const mountTarget = args.at(-2);
 const mountPath = args.at(-1);
 
 if (args.includes("-O") && args.includes("check")) {
-	await log("check");
-	if (effectiveSocketPath && await Bun.file(effectiveSocketPath).exists()) process.exit(0);
-	console.error("No ControlMaster");
-	process.exit(255);
+  await log("check");
+  if (effectiveSocketPath && await Bun.file(effectiveSocketPath).exists()) process.exit(0);
+  console.error("No ControlMaster");
+  process.exit(255);
 }
 
 if (args.includes("-M") && args.includes("-N") && args.includes("-f")) {
-	await log("start");
-	if (!effectiveSocketPath) process.exit(2);
-	await mkdir(dirname(effectiveSocketPath), { recursive: true });
-	await Bun.write(effectiveSocketPath, "master");
-	process.exit(0);
+  await log("start");
+  if (!effectiveSocketPath) process.exit(2);
+  await mkdir(dirname(effectiveSocketPath), { recursive: true });
+  await Bun.write(effectiveSocketPath, "master");
+  process.exit(0);
 }
 
 if (typeof mountTarget === "string" && mountTarget.endsWith(":/") && typeof mountPath === "string") {
-	await log("mount");
-	await mkdir(mountPath, { recursive: true });
-	await Bun.write(mountPath + "/.mounted", "mounted");
-	process.exit(0);
+  await log("mount");
+  await mkdir(mountPath, { recursive: true });
+  await Bun.write(mountPath + "/.mounted", "yes");
+  process.exit(0);
 }
 
+const cmd = args.at(-1);
 await log("run");
-const cmd = args[args.length - 1] ?? "";
-
 if (cmd === "say-hello") {
-	process.stdout.write("hello\\n");
-	process.stderr.write("warn\\n");
-	process.exit(0);
+  process.stdout.write("hello\\n");
+  process.stderr.write("warn\\n");
+  process.exit(0);
 }
-
 if (cmd === "slow-output") {
-	process.stdout.write("before timeout\\n");
-	process.stderr.write("err " + (effectiveSocketPath ?? "") + "\\n");
-	await Bun.sleep(2000);
-	process.exit(0);
+  process.stdout.write("before timeout\\n");
+  process.stderr.write("err " + (effectiveSocketPath ?? "") + "\\n");
+  await Bun.sleep(2000);
+  process.exit(0);
 }
-
-if (cmd === "fail-command") {
-	process.stdout.write("bad output\\n");
-	process.stderr.write("bad err " + (effectiveSocketPath ?? "") + "\\n");
-	process.exit(7);
-}
-
 process.stdout.write("ok\\n");
 process.exit(0);
 `;

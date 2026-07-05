@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { chmod, mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -10,7 +10,6 @@ import type { SshExecArgs, SshExecResult } from "./ssh-exec";
 
 test("MCP initialize and tools/list expose exec, mount, and host", async () => {
 	const server = createMcpServer({ execute: successfulExecute });
-
 	const initialize = await server.handle({
 		jsonrpc: "2.0",
 		id: 1,
@@ -28,7 +27,7 @@ test("MCP initialize and tools/list expose exec, mount, and host", async () => {
 		id: 1,
 		result: {
 			protocolVersion: "2025-06-18",
-			serverInfo: { name: "ssh", version: "0.1.0" },
+			serverInfo: { name: "ssh", version: "0.3.0" },
 		},
 	});
 	expect((tools as { result: { tools: Array<{ name: string }> } }).result.tools.map((tool) => tool.name)).toEqual([
@@ -154,7 +153,7 @@ test("tools/call returns compact mount success text", async () => {
 test("default MCP executor keeps timeout tail output for exec", async () => {
 	const tmpRoot = await mkdtemp(join(tmpdir(), "ssh-exec-mcp-timeout-test-"));
 	const fakeSsh = join(tmpRoot, "fake-timeout-ssh.ts");
-	await Bun.write(
+	await writeFile(
 		fakeSsh,
 		`#!/usr/bin/env bun
 import { mkdir } from "node:fs/promises";
@@ -196,7 +195,7 @@ process.exit(0);
 test("cleanup runner captures stdout and stderr", async () => {
 	const tmpRoot = await mkdtemp(join(tmpdir(), "ssh-exec-cleanup-test-"));
 	const fakeBin = join(tmpRoot, "fake-cleanup-ssh.ts");
-	await Bun.write(
+	await writeFile(
 		fakeBin,
 		`#!/usr/bin/env bun
 process.stdout.write("out\\n");

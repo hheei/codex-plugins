@@ -1,6 +1,9 @@
 import { chmod, mkdir, readdir, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { spawn } from "node:child_process";
+
+import { readProcessOutputTail } from "./stream-output";
 
 export type SessionStatus = "connected" | "reconnecting";
 
@@ -173,16 +176,21 @@ export class SessionManager {
 		}
 
 		const session = this.get(host);
-		const result = await this.runBinary(this.sshfsBin, this.buildSshfsArgs(session, mountPath), 20_000);
+		const result = await this.runBinary(this.sshfsBin, this.buildSshfsArgs(session, mountPath), 20_000, {
+			tolerateMissingBinary: true,
+		});
+		if (result.exitCode === 127) {
+			throw new Error("sshfs binary not found");
+		}
 		if (result.exitCode !== 0) {
 			const detail = result.stderr.trim() || result.stdout.trim();
 			const suffix = detail ? `: ${this.sanitize(detail)}` : "";
-			throw new Error(`Failed to mount ${host} at ${mountPath}${suffix}`);
+			throw new Error(`Failed mount ${host} ${mountPath}${suffix}`);
 		}
 
 		const mounted = await this.#mountProbe(mountPath);
 		if (!mounted.mounted || !mounted.healthy) {
-			throw new Error(`Mounted ${host} at ${mountPath}, but the mount probe did not report a healthy sshfs mount`);
+			throw new Error(`Mounted ${host} ${mountPath}, but mount probe did not report healthy sshfs mount`);
 		}
 
 		this.#mounts.set(host, { host, mountPath, lastUsed: Date.now() });
@@ -262,18 +270,9 @@ export class SessionManager {
 			"-o",
 			"StrictHostKeyChecking=accept-new",
 		];
-
 		if (this.supportsControlMaster && session) {
-			args.push(
-				"-S",
-				session.socketPath,
-				"-o",
-				"ControlMaster=auto",
-				"-o",
-				`ControlPersist=${this.controlPersist}`,
-			);
+			args.push("-S", session.socketPath, "-o", "ControlMaster=auto", "-o", `ControlPersist=${this.controlPersist}`);
 		}
-
 		return args;
 	}
 
@@ -290,18 +289,9 @@ export class SessionManager {
 			"-o",
 			"StrictHostKeyChecking=accept-new",
 		];
-
 		if (this.supportsControlMaster) {
-			args.push(
-				"-o",
-				"ControlMaster=auto",
-				"-o",
-				`ControlPath=${session.socketPath}`,
-				"-o",
-				`ControlPersist=${this.controlPersist}`,
-			);
+			args.push("-o", "ControlMaster=auto", "-o", `ControlPath=${session.socketPath}`, "-o", `ControlPersist=${this.controlPersist}`);
 		}
-
 		args.push(`${session.host}:/`, mountPath);
 		return args;
 	}
@@ -325,10 +315,7 @@ export class SessionManager {
 			const check = await runner(this.buildControlArgs(session, "check"), CONTROL_CHECK_TIMEOUT_MS);
 			if (check.exitCode !== 0) {
 				await this.removeSocketIfPresent(session.socketPath);
-				const remainingSetupMs = Math.max(
-					1,
-					DEFAULT_MASTER_SETUP_TIMEOUT_MS - (Date.now() - startedAt),
-				);
+				const remainingSetupMs = Math.max(1, DEFAULT_MASTER_SETUP_TIMEOUT_MS - (Date.now() - startedAt));
 				const start = await runner(this.buildStartArgs(session), remainingSetupMs);
 				if (start.exitCode !== 0) {
 					const detail = start.stderr.trim() || start.stdout.trim();
@@ -342,8 +329,7 @@ export class SessionManager {
 			this.markHostSuccess(host);
 			return session;
 		} catch (error) {
-			this.#sessions.delete(host);
-			await this.removeSocketIfPresent(session.socketPath);
+			session.status = "reconnecting";
 			this.markHostFailure(host);
 			throw error;
 		}
@@ -352,16 +338,12 @@ export class SessionManager {
 	private assertHostAvailable(host: string): void {
 		const failure = this.#failures.get(host);
 		if (!failure) return;
-		if (failure.blockedUntil === 0) {
-			return;
-		}
+		if (failure.blockedUntil === 0) return;
 		if (failure.blockedUntil <= Date.now()) {
 			this.#failures.delete(host);
 			return;
 		}
-
-		const waitMs = failure.blockedUntil - Date.now();
-		throw new Error(`SSH host ${host} is temporarily blocked after repeated failures (${Math.ceil(waitMs / 1000)}s remaining)`);
+		throw new Error(`SSH host ${host} is temporarily blocked after repeated connection failures`);
 	}
 
 	private markHostSuccess(host: string): void {
@@ -377,19 +359,22 @@ export class SessionManager {
 		});
 	}
 
-	private assertMountPlatformSupported(): void {
-		if (supportsSshfsMountPlatform(this.platform)) return;
-		throw new Error(`ssh_mount is currently supported only on Linux and macOS hosts running Codex locally; current platform is ${this.platform}`);
-	}
-
 	private async ensureControlDir(): Promise<void> {
 		await mkdir(this.controlDir, { recursive: true, mode: 0o700 });
-		await chmod(this.controlDir, 0o700);
+		await chmod(this.controlDir, 0o700).catch(() => {});
 	}
 
 	private async ensureMountDir(): Promise<void> {
 		await mkdir(this.mountDir, { recursive: true, mode: 0o700 });
 		await chmod(this.mountDir, 0o700).catch(() => {});
+	}
+
+	private async removeStaleSocket(socketPath: string): Promise<void> {
+		await rm(socketPath, { force: true }).catch(() => {});
+	}
+
+	private async removeSocketIfPresent(socketPath: string): Promise<void> {
+		await rm(socketPath, { force: true }).catch(() => {});
 	}
 
 	private async directoryHasEntries(path: string): Promise<boolean> {
@@ -410,27 +395,22 @@ export class SessionManager {
 
 		const result = await this.runBinary("mount", [], 5_000, { tolerateMissingBinary: true });
 		if (result.exitCode !== 0) return { mounted: false, healthy: false };
-
 		const output = result.stdout || result.output || "";
 		const mounted = output.split("\n").some((line) => line.includes(` on ${mountPath} `));
 		return { mounted, healthy: mounted };
 	}
 
 	private async unmountPath(mountPath: string): Promise<boolean> {
-		const strategies = this.platform === "linux"
-			? [
-				{ bin: "fusermount", args: ["-u", mountPath] },
-				{ bin: "fusermount3", args: ["-u", mountPath] },
-				{ bin: "umount", args: [mountPath] },
-			]
-			: [{ bin: "umount", args: [mountPath] }];
+		const strategies =
+			this.platform === "linux"
+				? [["fusermount", "-u", mountPath], ["umount", mountPath]]
+				: [["umount", mountPath], ["diskutil", "unmount", mountPath]];
 
-		for (const strategy of strategies) {
-			const result = await this.runBinary(strategy.bin, strategy.args, 10_000, { tolerateMissingBinary: true });
+		for (const args of strategies) {
+			const [bin, ...rest] = args;
+			const result = await this.runBinary(bin, rest, 10_000, { tolerateMissingBinary: true });
 			if (result.exitCode === 0) return true;
-			if (result.notice !== `${strategy.bin} not found`) return false;
 		}
-
 		return false;
 	}
 
@@ -440,86 +420,81 @@ export class SessionManager {
 		timeoutMs: number,
 		options: { tolerateMissingBinary?: boolean } = {},
 	): Promise<ProcessResult> {
-		let child: ReturnType<typeof Bun.spawn>;
+		let child: ReturnType<typeof spawn>;
 		try {
-			child = Bun.spawn([bin, ...args], {
-				stdin: "ignore",
-				stdout: "pipe",
-				stderr: "pipe",
-			});
+			child = spawn(bin, args, { stdio: ["ignore", "pipe", "pipe"] });
 		} catch (error) {
-			if (options.tolerateMissingBinary && isMissingBinary(error)) {
-				return {
-					exitCode: null,
-					stdout: "",
-					stderr: "",
-					output: "",
-					notice: `${bin} not found`,
-				};
-			}
-			if (isMissingBinary(error)) {
-				throw new Error(`${bin} binary not found on PATH`);
+			if (options.tolerateMissingBinary && isMissingBinaryError(error)) {
+				return { exitCode: 127, stdout: "", stderr: "" };
 			}
 			throw error;
 		}
 
-		const timeout = setTimeout(() => child.kill("SIGTERM"), timeoutMs);
+		let timedOut = false;
+		let killTimer: ReturnType<typeof setTimeout> | undefined;
+		const timeout = setTimeout(() => {
+			timedOut = true;
+			child.kill("SIGTERM");
+			killTimer = setTimeout(() => child.kill("SIGKILL"), 1000);
+		}, timeoutMs);
+
 		try {
-			const [stdoutBytes, stderrBytes, exitCode] = await Promise.all([
-				child.stdout ? new Response(child.stdout).bytes() : new Uint8Array(),
-				child.stderr ? new Response(child.stderr).bytes() : new Uint8Array(),
-				child.exited,
+			const [output, exitCode] = await Promise.all([
+				readProcessOutputTail(child.stdout, child.stderr, this.sensitiveValues()),
+				new Promise<number | null>((resolve, reject) => {
+					child.once("error", (error) => {
+						if (options.tolerateMissingBinary && isMissingBinaryError(error)) {
+							resolve(127);
+							return;
+						}
+						reject(error);
+					});
+					child.once("close", (code) => resolve(code));
+				}),
 			]);
-			const stdout = new TextDecoder().decode(stdoutBytes);
-			const stderr = new TextDecoder().decode(stderrBytes);
+
 			return {
-				exitCode,
-				stdout,
-				stderr,
-				output: `${stdout}${stderr}`,
-				truncated: false,
+				exitCode: timedOut ? null : exitCode,
+				output: output.text,
+				stdout: output.stdout,
+				stderr: output.stderr,
+				truncated: output.truncated,
+				totalBytes: output.totalBytes,
+				outputBytes: output.outputBytes,
+				totalLines: output.totalLines,
+				outputLines: output.outputLines,
+				...(timedOut ? { notice: `${bin} timed out after ${Math.round(timeoutMs / 1000)}s` } : {}),
 			};
+		} catch (error) {
+			if (
+				options.tolerateMissingBinary &&
+				(error instanceof Error) &&
+				(error.message.includes("Premature close") || isMissingBinaryError(error))
+			) {
+				return { exitCode: 127, stdout: "", stderr: "" };
+			}
+			throw error;
 		} finally {
 			clearTimeout(timeout);
+			if (killTimer) clearTimeout(killTimer);
 		}
 	}
 
-	private async removeStaleSocket(socketPath: string): Promise<void> {
-		try {
-			const stats = await stat(socketPath);
-			if (stats.isFile()) {
-				await rm(socketPath, { force: true });
-			}
-		} catch {
-			// Missing path is expected.
-		}
+	private assertMountPlatformSupported(): void {
+		if (this.platform === "linux" || this.platform === "darwin") return;
+		throw new Error(`ssh_mount is currently supported only on Linux and macOS hosts running Codex locally; current platform is ${this.platform}`);
 	}
-
-	private async removeSocketIfPresent(socketPath: string): Promise<void> {
-		try {
-			await rm(socketPath, { force: true });
-		} catch {
-			// Cleanup is best-effort.
-		}
-	}
-}
-
-function clampPositiveInt(value: number | undefined, fallback: number): number {
-	const raw = value ?? fallback;
-	if (!Number.isFinite(raw) || raw <= 0) return fallback;
-	return Math.max(1, Math.floor(raw));
-}
-
-function isMissingBinary(error: unknown): boolean {
-	if (!(error instanceof Error)) return false;
-	return "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT";
 }
 
 export function sanitizeHostForSocket(host: string): string {
-	const readable = host.replace(/[^A-Za-z0-9_.@:-]+/g, "_").replace(/^_+|_+$/g, "");
-	return (readable || "host").slice(0, 80);
+	return host.replace(/[^a-zA-Z0-9_.-]/g, "_");
 }
 
-export function supportsSshfsMountPlatform(platform: NodeJS.Platform = process.platform): boolean {
-	return platform === "linux" || platform === "darwin";
+function clampPositiveInt(value: number | undefined, fallback: number): number {
+	if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return fallback;
+	return Math.floor(value);
+}
+
+function isMissingBinaryError(error: unknown): boolean {
+	return Boolean(error && typeof error === "object" && "code" in error && (error as { code?: string }).code === "ENOENT");
 }

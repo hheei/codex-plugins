@@ -1,7 +1,7 @@
 {
-  "name": "@hheei/ssh-exec-mcp",
-  "version": "0.2.0",
-  "description": "MCP server for SSH host discovery, remote exec, and sshfs mounting over OpenSSH",
+  "name": "@hheei/ssh-exec",
+  "version": "0.3.0",
+  "description": "SSH host discovery, remote exec, sshfs mount, MCP server, and pi-extension for Codex and pi",
   "type": "module",
   "license": "MIT",
   "homepage": "https://github.com/hheei/ssh-exec",
@@ -20,6 +20,7 @@
     "bin/",
     "examples/",
     "plugins/ssh-exec/",
+    "index.ts",
     "ssh-exec-mcp.ts",
     "README.md",
     "LICENSE"
@@ -33,8 +34,19 @@
     "sshfs",
     "openssh",
     "remote",
-    "codex"
+    "codex",
+    "pi-package",
+    "pi-extension"
   ],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
   "scripts": {
     "test": "bun test plugins/ssh-exec/scripts/*.test.ts"
   }
