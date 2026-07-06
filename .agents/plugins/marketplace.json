@@ -1,7 +1,7 @@
 {
-  "name": "ssh-exec",
+  "name": "codex-plugins",
   "interface": {
-    "displayName": "SSH Exec"
+    "displayName": "Codex Plugins"
   },
   "plugins": [
     {

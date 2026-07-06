@@ -1,54 +1,32 @@
 {
-  "name": "@hheei/ssh-exec",
+  "name": "codex-plugins",
   "version": "0.5.0",
-  "description": "SSH host discovery, remote exec, sshfs mount, MCP server, and pi-extension for Codex and pi",
+  "private": true,
+  "description": "Local Codex plugin monorepo",
   "type": "module",
   "license": "MIT",
-  "homepage": "https://github.com/hheei/ssh-exec",
+  "homepage": "https://github.com/hheei/codex-plugins",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hheei/ssh-exec.git"
+    "url": "git+https://github.com/hheei/codex-plugins.git"
   },
   "bugs": {
-    "url": "https://github.com/hheei/ssh-exec/issues"
+    "url": "https://github.com/hheei/codex-plugins/issues"
   },
   "author": "hheei",
-  "bin": {
-    "ssh-exec-mcp": "bin/ssh-exec-mcp.js"
-  },
   "files": [
-    "bin/",
-    "examples/",
-    "plugins/ssh-exec/",
-    "index.ts",
-    "ssh-exec-mcp.ts",
+    ".agents/",
+    "plugins/",
     "README.md",
     "LICENSE"
   ],
-  "publishConfig": {
-    "access": "public"
-  },
   "keywords": [
+    "codex",
+    "plugin",
     "mcp",
     "ssh",
     "sshfs",
     "openssh",
-    "remote",
-    "codex",
-    "pi-package",
-    "pi-extension"
-  ],
-  "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*",
-    "@earendil-works/pi-tui": "*",
-    "typebox": "*"
-  },
-  "pi": {
-    "extensions": [
-      "./index.ts"
-    ]
-  },
-  "scripts": {
-    "test": "bun test plugins/ssh-exec/scripts/*.test.ts"
-  }
+    "remote"
+  ]
 }
