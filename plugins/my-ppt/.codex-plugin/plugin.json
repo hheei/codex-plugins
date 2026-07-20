@@ -1,0 +1,27 @@
+{
+  "name": "my-ppt",
+  "version": "0.1.0+codex.20260709192819",
+  "description": "Personal PPT strategy, design, review, and production workflows for Codex.",
+  "author": {
+    "name": "Local developer"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "My PPT",
+    "shortDescription": "Design, review, and produce slide decks.",
+    "longDescription": "My PPT collects reusable Codex skills, prompts, workflows, and helper scripts for planning persuasive decks, shaping slide-by-slide stories, creating visual systems, and auditing presentation quality.",
+    "developerName": "Local developer",
+    "category": "Productivity",
+    "capabilities": [
+      "presentation-design",
+      "storytelling",
+      "deck-review",
+      "local-scripts"
+    ],
+    "defaultPrompt": [
+      "Use $my-ppt to design a deck from this brief.",
+      "Use $my-ppt to review this presentation outline.",
+      "Use $my-ppt to turn these notes into slide structure."
+    ]
+  }
+}

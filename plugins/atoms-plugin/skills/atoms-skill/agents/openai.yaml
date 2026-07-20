@@ -1,0 +1,4 @@
+interface:
+  display_name: "Atoms Skill"
+  short_description: "Convert structures with ASE."
+  default_prompt: "Use $atoms-skill to convert this structure to xyz with ASE and verify the output."

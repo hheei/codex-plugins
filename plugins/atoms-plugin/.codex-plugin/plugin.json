@@ -1,0 +1,21 @@
+{
+  "name": "atoms-plugin",
+  "version": "0.1.0",
+  "description": "Local ASE-based atomistic structure utilities for Codex.",
+  "author": {
+    "name": "Local developer"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Atoms Plugin",
+    "shortDescription": "Convert atomistic structures with ASE.",
+    "longDescription": "Atoms Plugin provides local Codex skills and scripts for ASE-based atomistic structure conversion workflows.",
+    "developerName": "Local developer",
+    "category": "Productivity",
+    "capabilities": [
+      "ase",
+      "structure-conversion"
+    ],
+    "defaultPrompt": "Convert this atomistic structure with ASE and report what was written."
+  }
+}
