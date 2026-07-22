@@ -9,7 +9,7 @@ This page defines the branch naming convention used by this plugin when discussi
   - treat the first version-defining commit as the original reference point
 - `6.6.0X`
   - the current plugin-modified VASP source line used by this skill
-  - use this as the default target when discussing `skills/vasp-helper/vendor/vasp-6.6.0X/` and its graphify outputs
+  - use this as the default target when discussing `skills/vasp-helper/source/` and its graphify outputs
 
 ## Default Rule
 
@@ -20,7 +20,7 @@ If a source-level question does not explicitly name a branch:
 
 ## Graphify Scope
 
-The graphify artifacts under `skills/vasp-helper/vendor/vasp-6.6.0X/` describe the `6.6.0X` branch view, not the original `main` baseline.
+The graphify artifacts under `skills/vasp-helper/source/` describe the `6.6.0X` branch view, not the original `main` baseline.
 
 ## Mention the Branch Explicitly When
 

@@ -67,9 +67,9 @@ For remote staging and cleanup workflows, use the commands collected in [run-hyg
 
 ## Graphify Cross-Reference
 
-- `skills/vasp-helper/vendor/vasp-6.6.0X/graphify-gpt54-out/GRAPH_REPORT.md`
-- `skills/vasp-helper/vendor/vasp-6.6.0X/graphify-gpt54-out/graph.json`
-- `skills/vasp-helper/vendor/vasp-6.6.0X/graphify-out/GRAPH_REPORT.md`
+- `skills/vasp-helper/source/graphify-gpt54-out/GRAPH_REPORT.md`
+- `skills/vasp-helper/source/graphify-gpt54-out/graph.json`
+- `skills/vasp-helper/source/graphify-out/GRAPH_REPORT.md`
 
 ## Related Pages
 

@@ -14,7 +14,7 @@ Use the smallest relevant context first.
 - Use `projects/` only for project-specific overlays.
 - Use cached wiki pages for narrow INCAR-tag questions.
 - Use graphify only when the question actually requires source-code reading.
-- Do not start by opening raw files under `skills/vasp-helper/vendor/vasp-6.6.0X/src/*`.
+- Do not start by opening raw files under `skills/vasp-helper/source/src/*`.
 - If the user points to a remote run directory, prefer staging small analysis inputs under `/tmp/vasp-helper/` and analyzing the staged local copy first.
 
 ## Routing Order
@@ -38,9 +38,10 @@ Use the smallest relevant context first.
 
 ## Source-Navigation Notes
 
-- For source-level questions, first use the graphify artifacts under `skills/vasp-helper/vendor/vasp-6.6.0X/`.
-- Prefer `skills/vasp-helper/vendor/vasp-6.6.0X/graphify-gpt54-out/GRAPH_REPORT.md`, `graph.html`, and `graph.json`.
-- Use non-`gpt54` graphify outputs only as useful cross-checks.
+- For source-level questions, query the code graph at `skills/vasp-helper/source/graphify-out/graph.json` before opening raw files.
+- Use `graphify query "<question>" --graph skills/vasp-helper/source/graphify-out/graph.json` for relationship-aware searches.
+- Use `graphify path "<node-a>" "<node-b>" --graph skills/vasp-helper/source/graphify-out/graph.json` to trace a route, or `graphify explain "<node>" --graph skills/vasp-helper/source/graphify-out/graph.json` to inspect a node and its neighbors.
+- The graph is code-only; HTML visualization is intentionally not required. Cite the resulting source locations, then open only the relevant raw files.
 
 ## Guardrails
 

@@ -1,0 +1,118 @@
+# Default precompiler options
+CPP_OPTIONS = -DHOST=\"Linux\" \
+              -DMPI -DMPI_BLOCK=8000 -DMPI_INPLACE -Duse_collective \
+              -DscaLAPACK \
+              -DCACHE_SIZE=4000 \
+              -Davoidalloc \
+              -Dvasp6 \
+              -Dtbdyn \
+              -Dfock_dblbuf \
+              -D_OPENMP 
+
+CPP         = fpp -f_com=no -free -w0  $*$(FUFFIX) $*$(SUFFIX) $(CPP_OPTIONS)
+
+FC          = mpiifx -fc=ifx
+FCL         = mpiifx -fc=ifx
+
+FREE        = -free -names lowercase
+
+FFLAGS      = -assume byterecl -w
+
+OFLAG       = -O3
+OFLAG_IN    = $(OFLAG)
+DEBUG       = -O0
+
+# For what used to be vasp.5.lib
+CPP_LIB     = $(CPP)
+FC_LIB      = $(FC)
+CC_LIB      = icx
+CFLAGS_LIB  = -O
+FFLAGS_LIB  = -O1
+FREE_LIB    = $(FREE)
+
+OBJECTS_LIB = linpack_double.o
+
+# For the parser library
+CXX_PARS    = icpx
+LLIBS       = -lstdc++
+
+##
+## Customize as of this point! Of course you may change the preceding
+## part of this file as well if you like, but it should rarely be
+## necessary ...
+##
+
+# When compiling on the target machine itself, change this to the
+# relevant target when cross-compiling for another architecture
+VASP_TARGET_CPU ?= -xICELAKE-SERVER -qopt-zmm-usage=high -qopenmp
+FFLAGS     += $(VASP_TARGET_CPU)
+
+# Intel MKL (FFTW, BLAS, LAPACK, and scaLAPACK)
+# (Note: for Intel Parallel Studio's MKL use -mkl instead of -qmkl)
+FCL        += -qmkl
+MKLROOT    ?= /public/share/lmxu/share/intel/oneapi/mkl/2025.1
+LLIBS      += -L$(MKLROOT)/lib/intel64 -lmkl_scalapack_lp64 -lmkl_blacs_intelmpi_lp64
+INCS        =-I$(MKLROOT)/include/fftw
+
+# Use a separate scaLAPACK installation (optional but recommended in combination with OpenMPI)
+# Comment out the two lines below if you want to use scaLAPACK from MKL instead
+# SCALAPACK_ROOT ?= /path/to/your/scalapack/installation
+# LLIBS      += -L${SCALAPACK_ROOT}/lib -lscalapack
+
+# HDF5-support (optional but strongly recommended, and mandatory for some features)
+CPP_OPTIONS+= -DVASP_HDF5
+HDF5_ROOT  ?= /public/share/lmxu/share/hdf5-1.14.6/build_illvm_mpi/Release
+LLIBS      += -L$(HDF5_ROOT)/lib -lhdf5_fortran
+INCS       += -I$(HDF5_ROOT)/include
+
+# For the VASP-2-Wannier90 interface (optional)
+CPP_OPTIONS    += -DVASP2WANNIER90
+WANNIER90_ROOT ?= /public/share/lmxu/share/wannier90-2.1.0
+LLIBS          += $(WANNIER90_ROOT)/libwannier.a
+
+# For machine learning library vaspml (experimental)
+# CPP_OPTIONS += -Dlibvaspml
+# CPP_OPTIONS += -DVASPML_USE_CBLAS
+# CPP_OPTIONS += -DVASPML_USE_MKL
+# CPP_OPTIONS += -DVASPML_DEBUG_LEVEL=3
+# CXX_ML      = mpiicpx -cxx=icpx
+# CXXFLAGS_ML = -O3 -std=c++17 -Wall
+# INCLUDE_ML  =
+
+# PYTHON PLUGIN
+CPP_OPTIONS += -DPLUGINS
+LLIBS      += $(shell python3-config --ldflags --embed) -lstdc++
+CXX_FLAGS   = -Wall -Wextra $(shell python3 -m pybind11 --includes) -std=c++11
+
+# ELPA
+CPP_OPTIONS += -DELPA
+ELPA_ROOT   ?= /public/share/lmxu/share/elpa-2026.02.001/build_illvm_mpi/Release
+LLIBS       += -L$(ELPA_ROOT)/lib -lelpa_openmp
+INCS        += -I$(ELPA_ROOT)/include/elpa_openmp-2026.02.001/elpa
+INCS        += -I$(ELPA_ROOT)/include/elpa_openmp-2026.02.001/modules
+
+# DFT-D4
+CPP_OPTIONS += -DDFTD4
+DFTD4_ROOT  ?= /public/share/lmxu/share/dftd4/build_intel/Release
+LLIBS       += -L$(DFTD4_ROOT)/lib64 -ldftd4 -lmulticharge
+INCS        += -I$(DFTD4_ROOT)/include/dftd4/IntelLLVM-2025.1.1
+
+# simple-DFT-D3
+CPP_OPTIONS += -DSDFTD3
+SDFTD3_ROOT ?= /public/share/lmxu/share/simple-dftd3/build_illvm/Release
+LLIBS       += -L$(SDFTD3_ROOT)/lib64 -ls-dftd3
+INCS        += -I$(SDFTD3_ROOT)/include/s-dftd3/IntelLLVM-2025.1.1
+
+# mctc-lib
+MCTC_ROOT   ?= /public/share/lmxu/share/simple-dftd3/build_illvm/Release
+LLIBS       += -L$(MCTC_ROOT)/lib64 -lmctc-lib
+INCS        += -I$(MCTC_ROOT)/include/mctc-lib/modules
+
+# SCPC METHOD
+# CPP_OPTIONS += -DSCPC
+# DLMGROOT   = /public/share/lmxu/share/dl_mg
+# PSPFFTROOT = /public/share/lmxu/share/pspfft/Release
+# INCS      += -I$(DLMGROOT)
+# INCS      += -I$(PSPFFTROOT)/include
+# LLIBS     += -L$(DLMGROOT)/lib -ldlmg
+# LLIBS     += -L$(PSPFFTROOT)/lib -lpspfft

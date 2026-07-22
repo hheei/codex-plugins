@@ -8,19 +8,19 @@ This page explains how to navigate the bundled VASP source without jumping direc
 2. Read the relevant category page for the user-facing concept.
 3. Use that page's `Implementation Anchors` to narrow the source area.
 4. Check `projects/source-branches.md` if branch semantics matter.
-5. Use graphify artifacts to reduce the search area before opening raw files under `skills/vasp-helper/vendor/vasp-6.6.0X/src/`.
+5. Use graphify artifacts to reduce the search area before opening raw files under `skills/vasp-helper/source/src/`.
 
 ## Graphify Usage
 
-- `skills/vasp-helper/vendor/vasp-6.6.0X/graphify-gpt54-out/GRAPH_REPORT.md`
+- `skills/vasp-helper/source/graphify-gpt54-out/GRAPH_REPORT.md`
   - best human-readable subsystem overview
-- `skills/vasp-helper/vendor/vasp-6.6.0X/graphify-gpt54-out/graph.html`
+- `skills/vasp-helper/source/graphify-gpt54-out/graph.html`
   - best for interactive relationship browsing
-- `skills/vasp-helper/vendor/vasp-6.6.0X/graphify-gpt54-out/graph.json`
+- `skills/vasp-helper/source/graphify-gpt54-out/graph.json`
   - best for exact node/edge lookup
-- `skills/vasp-helper/vendor/vasp-6.6.0X/graphify-out/GRAPH_REPORT.md`
+- `skills/vasp-helper/source/graphify-out/GRAPH_REPORT.md`
   - alternate summary pass
-- `skills/vasp-helper/vendor/vasp-6.6.0X/graphify-out/graph.json`
+- `skills/vasp-helper/source/graphify-out/graph.json`
   - alternate machine-readable graph
 
 ## Rules

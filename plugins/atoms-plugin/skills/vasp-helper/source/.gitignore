@@ -1,0 +1,15 @@
+build
+bin
+tmp_plugin_local_potential_vasp_mode
+__pycache__
+.vscode
+cmake
+CMakeLists.txt
+.codex
+.graphify-core-code/
+.graphify-core-src/
+.graphify-probe/
+.graphify-root-core/
+graphify-gpt54-out/
+graphify-out/
+*.pyc
