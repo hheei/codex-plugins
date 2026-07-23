@@ -1,0 +1,3 @@
+[submodule "plugins/atoms-plugin/skills/vasp-helper/source"]
+	path = plugins/atoms-plugin/skills/vasp-helper/source
+	url = https://github.com/hheei/vasp-source.git

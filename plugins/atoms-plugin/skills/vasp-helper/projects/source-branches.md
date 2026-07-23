@@ -1,6 +1,6 @@
 # Source Branch Mapping
 
-This page defines the branch naming convention used by this plugin when discussing the bundled VASP source and its graphify outputs.
+This page defines the branch naming convention used by this plugin when discussing the VASP source submodule and its graphify outputs.
 
 ## Branch Roles
 

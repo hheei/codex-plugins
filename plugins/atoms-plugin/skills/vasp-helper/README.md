@@ -2,6 +2,12 @@
 
 This directory contains the actual Codex skill content for VASP work, plus standalone helper scripts.
 
+The VASP source is kept in the private [`hheei/vasp-source`](https://github.com/hheei/vasp-source) submodule, not in the main plugin repository. After cloning, initialize it with:
+
+```bash
+git submodule update --init --recursive
+```
+
 ## Use The Helper Scripts
 
 Run the scripts from this directory either through the unified subcommand entrypoint or the existing direct entrypoints:
@@ -44,4 +50,4 @@ Dependency notes:
 - `references/` contains general VASP knowledge pages
 - `projects/` contains project-specific overlays
 - `scripts/` contains standalone helper scripts
-- `source/` contains the bundled VASP source; branch-specific Graphify graphs live under `source/graphify-out/`
+- `source/` is the `hheei/vasp-source` submodule; branch-specific Graphify graphs live under its local `source/graphify-out/`

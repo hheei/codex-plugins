@@ -10,6 +10,8 @@ Small Codex plugins for local workflows and explicit remote-file access.
 
 The `sshfs` plugin exposes one MCP tool. Call it with an OpenSSH host alias before any remote file read, write, edit, search, listing, or inspection; it returns `localPath` and `remoteHomeLocalPath` under `~/.cache/sshfs-addon/<host>/`.
 
+The `vasp-helper` source is a private submodule from [`hheei/vasp-source`](https://github.com/hheei/vasp-source); the VASP source is not stored in this repository. Clone with `--recurse-submodules` when you have access.
+
 ## Install
 
 Install the marketplace from GitHub:

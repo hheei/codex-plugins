@@ -1,6 +1,6 @@
 # Source Navigation
 
-This page explains how to navigate the bundled VASP source without jumping directly into raw files.
+This page explains how to navigate the VASP source submodule without jumping directly into raw files.
 
 ## Navigation Order
 

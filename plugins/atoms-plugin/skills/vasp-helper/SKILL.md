@@ -9,7 +9,7 @@ description: 面向 VASP 的实用工作流支持：INCAR 调参、OUTCAR/OSZICA
 - 安装/helper 问题先读 `README.md`；含 `scripts/vasp_helper_cli.py` 子命令及保留直接入口。
 - 本文件为 skill 唯一路由入口。
 - 通用知识在 `references/`，项目覆盖在 `projects/`，窄范围 INCAR 标签查缓存 wiki。
-- 仅需源码时用 Graphify；勿大量打开 `source/src/*` 原始文件。
+- 仅需源码时用 Graphify；勿大量打开外部 submodule 的 `source/src/*` 原始文件。
 - 远程运行目录：小型输入先暂存 `/tmp/vasp-helper/` 再分析。
 
 ## 路由顺序
@@ -35,6 +35,7 @@ description: 面向 VASP 的实用工作流支持：INCAR 调参、OUTCAR/OSZICA
 
 - Codex 经插件清单 `"skills": "./skills/"` 发现本 skill；本目录含 `SKILL.md`。
 - `references/`、`projects/`、`scripts/`、`source/` 均相对 skill 根目录，非仓库根目录。
+- `source/` 是私有 `https://github.com/hheei/vasp-source` submodule；主仓库只记录其 gitlink，不提交源码内容。
 - 默认插件修改分支图：`source/graphify-out/6.6.0X/graph.json`。
 - 原始基线分支图：`source/graphify-out/6.6.0/graph.json`。
 - Graphify 查询在 skill 根目录运行：
