@@ -6,7 +6,7 @@ This is a monorepo for Codex plugins. Each directory under `plugins/` is an inde
 
 | Plugin | Version | Contents |
 | --- | --- | --- |
-| `atoms-plugin` | `0.1.0` | ASE-based atomistic structure conversion and the `vasp-helper` skill. Its VASP source is a private submodule. |
+| `atoms-plugin` | `0.1.1` | ASE-based atomistic structure conversion and the `vasp-helper` skill. Its VASP source is a private submodule. |
 | `my-ppt` | `0.1.0+codex.20260709192819` | Presentation strategy, storytelling, visual direction, deck review, examples, and local slide-plan scripts. |
 | `singbox` | `0.1.0` | Local SFM/sing-box and Clash API routing inspection, selector switching, and domain tests. |
 | `sshfs` | `0.6.0` | One explicit MCP tool that mounts an SSH remote root for local file tools and reuses healthy shared mounts. |
@@ -36,20 +36,12 @@ git submodule update --init --recursive
 codex plugin marketplace add hheei/codex-mono --ref main
 codex plugin add atoms-plugin@codex-mono
 
-# Find the marketplace checkout path registered by Codex.
-codex plugin marketplace list
-
-# Read the ROOT shown for codex-mono above; do not assume a cache path.
-MARKETPLACE_ROOT="$(codex plugin marketplace list | awk '$1 == \"codex-mono\" {print $2; exit}')"
-test -n "$MARKETPLACE_ROOT" && test -d "$MARKETPLACE_ROOT"
-git -C "$MARKETPLACE_ROOT" submodule update --init --recursive
-
-# Refresh the installed plugin cache after the source appears.
-codex plugin remove atoms-plugin@codex-mono
-codex plugin add atoms-plugin@codex-mono
+# Initialize the private source and refresh the official plugin cache.
+setup_script="$(find "${CODEX_HOME:-$HOME/.codex}/plugins/cache/codex-mono/atoms-plugin" -path '*/scripts/install-vasp-source.sh' -print -quit)"
+bash "$setup_script"
 ```
 
-The submodule clone uses your normal Git credentials, so the account must have access to the private [`hheei/vasp-source`](https://github.com/hheei/vasp-source) repository. Re-run the `git -C ... submodule update` step after upgrading the marketplace snapshot.
+The script locates the marketplace root from Codex itself, initializes the private submodule with your normal Git credentials, and refreshes the official plugin cache. Re-run it after upgrading the marketplace snapshot.
 
 ## Install
 
